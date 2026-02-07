@@ -72,6 +72,32 @@
           </div>
         </div>
       </div>
+      <!-- CARD 3: HISTORY -->
+      <div class="card history-section">
+        <div class="history-header">
+          <h2>📜 Analysis History</h2>
+          <button class="clear-history-btn" onclick="clearHistory()" title="Clear History">🗑️ Clear</button>
+        </div>
+        <div class="history-grid">
+          <!-- COLUMN 1: ACCURATE -->
+          <div class="history-col">
+            <h3 class="col-header header-correct">✅ Accurate</h3>
+            <div id="colAccurate" class="history-col-list"></div>
+          </div>
+
+          <!-- COLUMN 2: INCORRECT -->
+          <div class="history-col">
+            <h3 class="col-header header-incorrect">❌ Incorrect</h3>
+            <div id="colIncorrect" class="history-col-list"></div>
+          </div>
+
+          <!-- COLUMN 3: CORRECTED -->
+          <div class="history-col">
+            <h3 class="col-header header-corrected">🟠 Corrected</h3>
+            <div id="colCorrected" class="history-col-list"></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -86,6 +112,10 @@
     const submitBtn = document.getElementById('submitBtn');
 
     let currentServerFilename = null;
+    let historyData = [];
+
+    // Load history on start
+    loadHistory();
 
     // Drag and Drop
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -248,11 +278,6 @@
       const msgEl = document.getElementById('feedbackMessage');
       msgEl.innerText = "Submitting feedback...";
 
-      // Extract prediction text from DOM is hard, passed implicitly? 
-      // We can get it from the displayed DOM or just send currentServerFilename
-      // Backend only needs filename + actual_label + correct status
-      // Backend can infer old prediction but we usually send it for logging.
-      // Let's grab it:
       const predEl = document.querySelector('.result-item h3 span');
       const currentPred = predEl ? predEl.innerText : "unknown";
 
@@ -277,6 +302,10 @@
           document.getElementById('correctionUI').style.display = 'none';
           // Disable buttons
           document.querySelectorAll('.feedback-btn').forEach(btn => btn.disabled = true);
+
+          // Reload History
+          setTimeout(loadHistory, 1000);
+
         } else {
           msgEl.innerText = "Error: " + data.error;
           msgEl.style.color = "red";
@@ -285,6 +314,88 @@
         console.error(e);
         msgEl.innerText = "Network error.";
       }
+    }
+
+    // --- HISTORY FUNCTIONS ---
+    async function loadHistory() {
+      try {
+        const res = await fetch('/history');
+        historyData = await res.json();
+        renderHistory();
+      } catch (e) {
+        console.error("History load error", e);
+      }
+    }
+
+    async function clearHistory() {
+      if (!confirm("Are you sure you want to clear the history? This cannot be undone.")) return;
+
+      try {
+        const res = await fetch('/clear_history', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          historyData = [];
+          renderHistory();
+        } else {
+          alert("Failed to clear history: " + data.error);
+        }
+      } catch (e) {
+        alert("Network error");
+      }
+    }
+
+    function renderHistory() {
+      const colAccurate = document.getElementById('colAccurate');
+      const colIncorrect = document.getElementById('colIncorrect');
+      const colCorrected = document.getElementById('colCorrected');
+
+      // Clear columns
+      colAccurate.innerHTML = '';
+      colIncorrect.innerHTML = '';
+      colCorrected.innerHTML = '';
+
+      if (historyData.length === 0) {
+        colAccurate.innerHTML = '<div class="empty-history">No history.</div>';
+        return;
+      }
+
+      historyData.forEach(item => {
+        const date = new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const div = document.createElement('div');
+        div.className = 'history-card-item';
+
+        // Image path (handle legacy items without unique filenames gracefully-ish, though they won't exist in static/uploads so onerror hides them)
+        const imgPath = `/static/uploads/${item.filename}`;
+
+        let listContent = `
+                <div class="h-layout">
+                    <img src="${imgPath}" class="h-thumb" onerror="this.style.display='none'">
+                    <div class="h-info">
+                        <div class="h-meta">${date}</div>
+                        <div class="h-pred"><strong>${item.prediction}</strong></div>
+            `;
+
+        if (item.status === 'correct') {
+          // No additional content needed for 'correct'
+        } else if (item.status === 'corrected') {
+          listContent += `<div class="h-arrow">corrected to</div><div class="h-actual">${item.actual}</div>`;
+        } else { // item.status === 'incorrect'
+          // No additional content needed for 'incorrect'
+        }
+        // Close h-info and h-layout once after conditional content
+        listContent += `</div></div>`;
+
+        div.innerHTML = listContent;
+
+        if (item.status === 'correct') {
+          colAccurate.appendChild(div);
+        } else if (item.status === 'corrected') {
+          colCorrected.appendChild(div);
+        } else { // item.status === 'incorrect'
+          colIncorrect.appendChild(div);
+        }
+      });
     }
   </script>
 </body>

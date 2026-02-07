@@ -83,6 +83,10 @@ project/
    ```bash
    python app.py
    ```
+   or
+   ```bash
+   ./venv/bin/python app.py
+   ```
 
 5. **Open in your browser**
 

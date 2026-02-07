@@ -15,9 +15,12 @@ app = Flask(__name__)
 CORS(app)
 
 # Config
+# Config
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", 10)) * 1024 * 1024
-UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/tmp/uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+UPLOAD_FOLDER = 'static/uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 FEEDBACK_FILE = "feedback.csv"
 DATA_CSV = "data.csv"
 
@@ -26,24 +29,25 @@ FEATURE_CACHE = {}
 
 MODEL_PATH = os.environ.get("MODEL_PATH", "knn_model.pkl")
 
-# ============================
-# Load trained KNN model
-# ============================
-with open(MODEL_PATH, "rb") as f:
-    model_data = pickle.load(f)
-
-knn = model_data["model"]                   # trained KNN model
-scaler = model_data["scaler"]               # MinMaxScaler
-label_encoder_classes = model_data["classes"]  # class names
-
-label_encoder = LabelEncoder()
-label_encoder.classes_ = np.array(label_encoder_classes)
-
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
 # ============================
-# Helper Functions
+# Load trained KNN model
 # ============================
+try:
+    with open(MODEL_PATH, "rb") as f:
+        model_data = pickle.load(f)
+
+    knn = model_data["model"]                   # trained KNN model
+    scaler = model_data["scaler"]               # MinMaxScaler
+    label_encoder_classes = model_data["classes"]  # class names
+
+    label_encoder = LabelEncoder()
+    label_encoder.classes_ = np.array(label_encoder_classes)
+except Exception as e:
+    print(f"❌ Error loading model: {e}")
+    # Initialize dummies to prevent immediate crash, though upload will fail
+    knn, scaler, label_encoder = None, None, None
 
 def retrain_model():
     """
@@ -179,16 +183,18 @@ def upload_image():
     if ext not in ALLOWED_EXTS:
         return jsonify({"error": f"Unsupported file type: {ext}"}), 400
 
-    temp_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
-    file.save(temp_path)
-
     try:
+        # Generate unique filename for persistence
+        unique_filename = f"{uuid.uuid4().hex}{ext}"
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        file.save(file_path)
+
         # Extract features and scale
-        features = extract_features(temp_path)
+        features = extract_features(file_path)
         
         # Cache features for active learning (feedback loop)
-        # We use the original filename as key. In a real app, use a session ID.
-        FEATURE_CACHE[file.filename] = features
+        # Key by the unique filename now
+        FEATURE_CACHE[unique_filename] = features
         
         features_scaled = scaler.transform(features.reshape(1, -1))
 
@@ -209,24 +215,20 @@ def upload_image():
         # Generate Explanation
         explanation = generate_explanation(prob_dict, pred_label)
 
-        print(f"Image uploaded: {file.filename} -> {pred_label} | {prob_dict}")
+        print(f"Image uploaded: {unique_filename} -> {pred_label} | {prob_dict}")
 
         return jsonify({
             "success": True,
             "prediction": pred_label,
             "probabilities": prob_dict,
             "explanation": explanation,
-            "filename": file.filename
+            "filename": unique_filename # Return the unique name
         })
 
     except Exception as e:
+        print(f"Error processing image: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
-    finally:
-        if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
+    # No finally block -> Image persists
 
 @app.route("/feedback", methods=["POST"])
 def save_feedback():
@@ -235,7 +237,12 @@ def save_feedback():
         filename = data.get("filename", "unknown")
         prediction = data.get("prediction", "unknown")
         is_correct = data.get("correct", False)
-        actual_label = data.get("actual_label", prediction if is_correct else "Unknown")
+        # Fix: handle explicit None from frontend
+        actual_label = data.get("actual_label")
+        if not actual_label and is_correct:
+            actual_label = prediction
+        elif not actual_label:
+            actual_label = "Unknown"
         
         # ACTIVE LEARNING LOGIC
         if filename in FEATURE_CACHE:
@@ -308,6 +315,59 @@ def save_feedback():
         return jsonify({"success": True})
     except Exception as e:
         print(e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/history", methods=["GET"])
+def get_history():
+    if not os.path.exists(FEEDBACK_FILE):
+        return jsonify([])
+
+    history = []
+    try:
+        # Read backwards or just read all and reverse
+        import csv
+        with open(FEEDBACK_FILE, "r") as f:
+            reader = csv.DictReader(f)
+            data = list(reader)
+            
+            # Process rows
+            for row in reversed(data): # Newest first
+                # Determine status
+                is_correct = row.get("is_correct", "False").lower() == "true"
+                actual = row.get("actual_label", "")
+                pred = row.get("prediction", "")
+                
+                status = "unknown"
+                if is_correct:
+                    status = "correct"
+                elif actual and actual != pred:
+                    status = "corrected"
+                else:
+                    status = "incorrect" # Wrong but no correction provided (rare with current UI)
+
+                history.append({
+                    "timestamp": row.get("timestamp"),
+                    "filename": row.get("filename"),
+                    "prediction": pred,
+                    "actual": actual,
+                    "status": status
+                })
+                
+                if len(history) >= 50: # Limit to last 50
+                    break
+                    
+        return jsonify(history)
+    except Exception as e:
+        print(f"History error: {e}")
+        return jsonify({"error": str(e)}), 500
+@app.route("/clear_history", methods=["POST"])
+def clear_history():
+    try:
+        # Just open in write mode to truncate
+        with open(FEEDBACK_FILE, "w") as f:
+            f.write("timestamp,filename,prediction,is_correct,actual_label\n") # Keep header
+        return jsonify({"success": True})
+    except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
