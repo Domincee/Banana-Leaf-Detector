@@ -20,6 +20,13 @@ def get_leaf_mask(img):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7,7))  # Morphological kernel
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)  # Fill small holes
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)   # Remove small noise
+    
+    # Fallback: If no green detected (non-leaf image), use the whole image
+    # This ensures we still extract valid texture/color features for "None-leaf" objects
+    if cv2.countNonZero(mask) < 50:
+        h, w = img.shape[:2]
+        mask = np.ones((h, w), dtype=np.uint8) * 255
+        
     return mask
 
 def color_feats(img, mask):

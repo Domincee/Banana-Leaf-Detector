@@ -1,0 +1,26 @@
+timestamp,filename,prediction,is_correct
+2026-02-07T10:37:56.906219,client_upload_session,None-leaf,True
+2026-02-07T10:42:40.600690,client_upload_session,Unhealthy leaf,False
+2026-02-07T10:43:26.615944,client_upload_session,Unhealthy leaf,False
+2026-02-07T10:45:21.109504,client_upload_session,Unhealthy leaf,False,Non-Leaf
+2026-02-07T10:57:05.004098,Screenshot_20260206_203118.png,Unhealthy leaf,False,Non-Leaf
+2026-02-07T10:57:25.718248,Screenshot_20260206_203118.png,None-leaf,True,None-leaf
+2026-02-07T10:59:30.842944,Screenshot_20260205_065925.png,None-leaf,True,None-leaf
+2026-02-07T11:00:02.029123,Screenshot_20260206_203118.png,Unhealthy leaf,False,Non-Leaf
+2026-02-07T11:00:37.185910,Screenshot_20260205_065925.png,None-leaf,True,None-leaf
+2026-02-07T11:04:03.945729,Screenshot_20260205_065925.png,None-leaf,False,Healthy Leaf
+2026-02-07T11:04:41.651503,Screenshot_20260205_065925.png,None-leaf,True,None-leaf
+2026-02-07T11:08:52.143864,Screenshot_20260205_065925.png,None-leaf,False,Healthy Leaf
+2026-02-07T11:11:29.155701,Screenshot_20260205_065925.png,None-leaf,False,Healthy Leaf
+2026-02-07T11:16:21.345465,Screenshot_20260205_065925.png,Unhealthy leaf,False,Non-Leaf
+2026-02-07T11:18:41.151466,Screenshot_20260207_111811.png,Unhealthy leaf,False,Non-Leaf
+2026-02-07T11:20:32.623639,Screenshot_20260207_111950.png,Unhealthy leaf,True,Unhealthy leaf
+2026-02-07T11:21:08.255997,Screenshot_20260207_112047.png,None-leaf,False,Healthy Leaf
+2026-02-07T11:22:12.210455,Screenshot_20260207_112047.png,Healthy Leaf,True,Healthy Leaf
+2026-02-07T11:23:15.213782,Screenshot_20260207_112232.png,Unhealthy leaf,False,Healthy Leaf
+2026-02-07T11:48:30.763233,Screenshot_20260205_065925.png,Unhealthy leaf,False,Non-Leaf
+2026-02-07T12:00:30.768479,Screenshot_20260206_203118.png,Unhealthy leaf,False,Non-Leaf
+2026-02-07T12:03:45.129385,Screenshot_20260206_203118.png,None-leaf,True,None
+2026-02-07T12:03:51.175245,Screenshot_20260205_065925.png,None-leaf,True,None
+2026-02-07T12:04:03.365889,Screenshot_20260207_111950.png,Unhealthy leaf,False,Non-Leaf
+2026-02-07T12:04:14.272851,Screenshot_20260207_112047.png,Healthy Leaf,True,None

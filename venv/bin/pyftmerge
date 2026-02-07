@@ -1,4 +1,4 @@
-#!/mnt/datadrive/Projects/Banana-Leaf-Detector/venv/bin/python3
+#!/mnt/datadrive/Project/Banana-Leaf-Detector/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

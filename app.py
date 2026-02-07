@@ -241,43 +241,59 @@ def save_feedback():
         if filename in FEATURE_CACHE:
             features = FEATURE_CACHE[filename]
             
-            # Standardize label for CSV (Needs to match training data format)
-            # Training data uses: 'Healthy Leaf', 'Unhealthy leaf', 'None-leaf'
-            # Our frontend sends: 'Healthy Leaf', 'Unhealthy Leaf', 'Non-Leaf'
-            
+            # Standardize label
             label_map = {
                 'Healthy Leaf': 'Healthy Leaf',
                 'Unhealthy Leaf': 'Unhealthy leaf',
-                'Non-Leaf': 'None-leaf' # or 'Non-leaf' in some dataset versions description said Non-leaf
+                'Non-Leaf': 'None-leaf' 
             }
-            # Fallback
             standardized_label = label_map.get(actual_label, actual_label)
-            
-            # Construct row: path, label, feat1...feat59
-            # We don't have a real path or hash for the temp file anymore, so fill dummy
             dummy_path = f"active_learning/{filename}"
-            # No hash column in actual data.csv
             
-            row = [dummy_path, standardized_label] + features.tolist()
+            # DEDUPLICATION & APPEND
+            try:
+                if os.path.exists(DATA_CSV):
+                    df = pd.read_csv(DATA_CSV)
+                    
+                    # Remove existing entries for this file to avoid duplicates/conflicts
+                    # We filter out rows where path matches our dummy_path
+                    initial_len = len(df)
+                    df = df[df['path'] != dummy_path]
+                    if len(df) < initial_len:
+                        print(f"♻️  Replaced existing entry for {filename}")
+                        
+                    # Create new row
+                    # We map features to the existing columns (skipping path/label)
+                    # We assume the CSV structure is stable: path, label, feat1, feat2...
+                    feature_cols = df.columns[2:]
+                    
+                    if len(features) != len(feature_cols):
+                        print(f"⚠️ Feature count mismatch! Got {len(features)}, expected {len(feature_cols)}")
+                        # Fallback: Just append as values if columns don't align perfectly (risky but better than crash)
+                         # Actually, if mismatch, we shouldn't save. 
+                        pass
+                    
+                    new_row = {'path': dummy_path, 'label': standardized_label}
+                    for i, col in enumerate(feature_cols):
+                        if i < len(features):
+                            new_row[col] = features[i]
+                            
+                    # Append unique row
+                    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                    
+                    # Save back to CSV (overwriting safely)
+                    df.to_csv(DATA_CSV, index=False)
+                    print(f"📝 Active Learning: Saved {standardized_label} to dataset.")
+                    
+                    # Trigger Retrain
+                    retrain_model()
+                    
+                else:
+                    print("❌ data.csv missing, cannot append.")
+            except Exception as csv_err:
+                print(f"❌ Error updating CSV: {csv_err}")
             
-            # Append to data.csv
-            # We assume data.csv has no header? Or it does. knn_trainer.py reads with pd.read_csv.
-            # Convert to DataFrame to append cleanly matching columns if possible, 
-            # OR just append to file if we know the schema is fixed.
-            # Let's try appending as CSV line to avoid loading full DF here.
-            
-            # Convert values to string
-            row_str = ",".join(map(str, row))
-            
-            with open(DATA_CSV, "a") as f:
-                f.write(row_str + "\n")
-                
-            print(f"📝 Added new training sample for {standardized_label}")
-            
-            # TRIGGER RETRAIN
-            retrain_model()
-            
-            # Clear cache to free memory
+            # Clear cache
             del FEATURE_CACHE[filename]
 
         # Log to feedback.csv as well

@@ -2,21 +2,44 @@
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Banana Leaf Disease Detector</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/styles.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Banana Leaf Disease Detector | AI-Powered</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+
+  <script>
+    function scrollToTool() {
+      document.getElementById('upload-tool').scrollIntoView({ behavior: 'smooth' });
+    }
+  </script>
 </head>
 
 <body>
-  <div class="container">
+
+  <!-- HERO SECTION -->
+  <section class="hero-section">
+    <div class="hero-content">
+      <span class="badge">🌱 AI-Powered Agriculture</span>
+      <h1>Protect Your <span class="highlight">Banana Crops</span> with Intelligence</h1>
+      <p>Instant disease detection using advanced machine learning. Accurate, fast, and constantly learning from your
+        feedback.</p>
+      <button onclick="scrollToTool()" class="cta-button">Start Diagnosis</button>
+    </div>
+    <div class="hero-background"></div>
+  </section>
+
+  <!-- ORIGINAL TOOL LAYOUT -->
+  <div id="upload-tool" class="container">
     <header>
       <h1>🍃 Banana Leaf Detector</h1>
       <p class="subtitle">AI-Powered Plant Health Analysis</p>
     </header>
 
     <div class="main-content">
+      <!-- CARD 1: UPLOAD -->
       <div class="card upload-section">
         <h2>Upload Image</h2>
         <form id="uploadForm" novalidate>
@@ -25,6 +48,7 @@
             <p><strong>Click to upload</strong> or drag and drop</p>
             <p style="font-size: 0.9em; color: #7f8c8d; margin-top: 10px;">Supports: JPG, PNG, WEBP</p>
           </div>
+          <!-- IMPORTANT: name="image" to match app.py -->
           <input type="file" id="imageInput" name="image" accept="image/*">
           <img id="preview" alt="Image preview">
           <button type="submit" id="submitBtn">Analyze Leaf</button>
@@ -38,6 +62,7 @@
         </div>
       </div>
 
+      <!-- CARD 2: RESULTS -->
       <div class="card results-section">
         <h2>Analysis Results</h2>
         <div id="output">
@@ -47,345 +72,220 @@
           </div>
         </div>
       </div>
-
-      <div class="card recent-uploads">
-        <h2>📜 Recent Analysis</h2>
-        <div class="recent-grid" id="recentGrid">
-          <div class="empty-state">
-            <p>No recent analyses yet</p>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 
+  <!-- Script Restored -->
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const form = document.getElementById("uploadForm");
-      const output = document.getElementById("output");
-      const submitBtn = document.getElementById("submitBtn");
-      const imageInput = document.getElementById("imageInput");
-      const preview = document.getElementById("preview");
-      const uploadZone = document.getElementById("uploadZone");
-      const progressSteps = document.getElementById("progressSteps");
-      const recentGrid = document.getElementById("recentGrid");
+    const uploadForm = document.getElementById('uploadForm');
+    const imageInput = document.getElementById('imageInput');
+    const uploadZone = document.getElementById('uploadZone');
+    const preview = document.getElementById('preview');
+    const output = document.getElementById('output');
+    const progressSteps = document.getElementById('progressSteps');
+    const submitBtn = document.getElementById('submitBtn');
 
-      let recentUploads = [];
-      try {
-        recentUploads = JSON.parse(localStorage.getItem("recentUploads") || "[]");
-      } catch {
-        localStorage.removeItem("recentUploads");
-      }
+    let currentServerFilename = null;
 
-
-      function saveRecentUploads() {
-        if (recentUploads.length > 10) recentUploads = recentUploads.slice(0, 10);
-        try {
-          localStorage.setItem("recentUploads", JSON.stringify(recentUploads));
-        } catch {
-          recentUploads = recentUploads.slice(0, 5);
-          localStorage.setItem("recentUploads", JSON.stringify(recentUploads));
-        }
-      }
-
-      function loadRecentUploads() {
-        if (recentUploads.length === 0) {
-          recentGrid.innerHTML = '<div class="empty-state"><p>No recent analyses yet</p></div>';
-        } else {
-          recentGrid.innerHTML = recentUploads.map(upload => `
-            <div class="recent-item">
-              <img src="${upload.image}" alt="Leaf image">
-              <div class="recent-disease">${upload.prediction}</div>
-              <div class="recent-time">${upload.time}</div>
-      <span class="status-badge ${upload.prediction.toLowerCase().includes("non")
-              ? "status-nonleaf"
-              : upload.isHealthy
-                ? "status-healthy"
-                : "status-unhealthy"
-            }">
-        ${upload.prediction.toLowerCase().includes("non")
-              ? "Non-Leaf"
-              : upload.isHealthy
-                ? "Healthy"
-                : "Unhealthy"
-            }
-      </span>
-            </div>
-          `).join("");
-        }
-      }
-
-      function compressImage(imgSrc, maxWidth = 200, quality = 0.7) {
-        return new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const scale = Math.min(maxWidth / img.width, 1);
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', quality));
-          };
-          img.src = imgSrc;
-        });
-      }
-      async function addRecentUpload(image, prediction) {
-        if (prediction.toLowerCase().includes("diseased")) {
-          prediction = prediction.replace(/Diseased/gi, "Unhealthy");
-        }
-
-        const lowerPred = prediction.toLowerCase().trim();
-
-        const isHealthy = (
-          lowerPred.includes("healthy") &&
-          !lowerPred.includes("unhealthy") &&
-          !lowerPred.includes("non")
-        );
-
-        const now = new Date();
-
-        const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-        const compressedImage = await compressImage(image);
-
-        recentUploads.unshift({
-          image: compressedImage,
-          prediction,
-          time,
-          isHealthy
-        });
-
-        if (recentUploads.length > 6) recentUploads = recentUploads.slice(0, 6);
-        saveRecentUploads();
-        loadRecentUploads();
-      }
-      uploadZone.addEventListener("click", () => imageInput.click());
-      uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("dragover"); });
-      uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("dragover"));
-      uploadZone.addEventListener("drop", e => {
-        e.preventDefault(); uploadZone.classList.remove("dragover");
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith("image/")) {
-          imageInput.files = e.dataTransfer.files;
-          showPreview(file);
-        }
-      });
-
-      function showPreview(file) {
-        const reader = new FileReader();
-        reader.onload = e => { preview.src = e.target.result; preview.style.display = "block"; };
-        reader.readAsDataURL(file);
-      }
-      imageInput.addEventListener("change", e => { if (e.target.files[0]) showPreview(e.target.files[0]); });
-
-
-      imageInput.addEventListener("change", e => {
-        const file = e.target.files[0];
-        if (file) showPreview(file);
-      });
-
-      function updateProgressStep(stepNum) {
-        for (let i = 1; i <= 4; i++) {
-          const step = document.getElementById(`step${i}`);
-          if (i < stepNum) { step.classList.add("completed"); step.classList.remove("active"); }
-          else if (i === stepNum) { step.classList.add("active"); }
-          else { step.classList.remove("active", "completed"); }
-        }
-      }
-
-      async function simulateProgress() {
-        progressSteps.classList.add("active");
-        updateProgressStep(1); await new Promise(r => setTimeout(r, 600));
-        updateProgressStep(2); await new Promise(r => setTimeout(r, 800));
-        updateProgressStep(3); await new Promise(r => setTimeout(r, 1000));
-        updateProgressStep(4); await new Promise(r => setTimeout(r, 600));
-      }
-
-      form.addEventListener("submit", async e => {
-        e.preventDefault();
-        submitBtn.disabled = true;
-
-        const file = imageInput.files[0];
-        if (!file) {
-          output.innerHTML = `
-            <div class="error-message" style="
-              color: #e74c3c;
-              font-weight: 600;
-              background: #ffeaea;
-              border: 1px solid #f5b7b1;
-              padding: 10px;
-              border-radius: 8px;
-              margin-top: 10px;
-            ">
-              ⚠️ Please upload a leaf image before analyzing.
-            </div>`;
-          setTimeout(() => {
-            output.innerHTML = `
-              <div class="empty-state">
-                <p>📊</p>
-                <p>Upload an image to see analysis results</p>
-              </div>`;
-          }, 3000);
-          submitBtn.disabled = false;
-          return;
-        }
-
-        const formData = new FormData(form);
-        submitBtn.textContent = "Analyzing...";
-        output.innerHTML = '<div class="loading-spinner"></div><p style="margin-top:15px;color:#667eea;">Processing your image...</p>';
-
-        const progressPromise = simulateProgress();
-
-        try {
-          const response = await fetch("/upload", { method: "POST", body: formData });
-          await progressPromise;
-          if (!response.ok) throw new Error(`Server error: ${response.status}`);
-          const result = await response.json();
-
-          progressSteps.classList.remove("active");
-
-          if (result.success) {
-            currentServerFilename = result.filename; // Store for feedback
-            const prediction = result.prediction;
-            const probabilities = result.probabilities;
-
-            // Build HTML for all class probabilities
-            let probHTML = '';
-            for (const [cls, perc] of Object.entries(probabilities)) {
-              probHTML += `
-                <div class="class-bar" style="margin: 8px 0;">
-                  <div class="class-name" style="font-weight:600;">${cls}</div>
-                  <div class="progress-bar" style="width:100%; height:20px; background:#e0e0e0; border-radius:10px; overflow:hidden;">
-                    <div class="progress-fill" style="width:0%; height:100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); display:flex; align-items:center; justify-content:center; color:white; font-weight:bold;">
-                      <span class="progress-text">0%</span>
-                    </div>
-                  </div>
-                </div>
-              `;
-            }
-
-            output.innerHTML = `
-            <div class="result-content">
-              <div style="font-size:3em;">✅</div>
-              <div class="disease-name">${prediction}</div>
-              
-              <div class="analysis-box" style="background:#f8f9fa; padding:15px; border-radius:10px; margin: 15px 0; text-align:left; border-left: 4px solid #667eea;">
-                <h4 style="margin-bottom:5px; color:#2c3e50;">🧠 AI Analysis</h4>
-                <p style="font-size:0.95em; color:#555; line-height:1.5;">${result.explanation}</p>
-              </div>
-
-              ${probHTML}
-              
-              <div class="feedback-section" style="margin-top:25px; border-top:1px solid #eee; padding-top:15px;">
-                <div id="initialFeedback">
-                    <p style="margin-bottom:10px; font-weight:600; color:#555;">Was this result accurate?</p>
-                    <div class="feedback-buttons">
-                    <button onclick="sendFeedback(true)" class="feedback-btn like-btn" style="width:auto; padding:8px 20px; margin:0 5px; background:#e8f5e9; color:#2e7d32; border:1px solid #c8e6c9;">
-                        Correct 👍
-                    </button>
-                    <button onclick="showCorrectionOptions()" class="feedback-btn dislike-btn" style="width:auto; padding:8px 20px; margin:0 5px; background:#ffebee; color:#c62828; border:1px solid #ffcdd2;">
-                        Incorrect 👎
-                    </button>
-                    </div>
-                </div>
-
-                <div id="correctionSection" style="display:none; margin-top:15px; animation: fadeIn 0.3s ease;">
-                    <p style="font-size:0.9em; color:#555; margin-bottom:8px;">What is the actual label?</p>
-                    <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
-                        <button onclick="submitCorrection('Healthy Leaf')" class="option-btn">Healthy Leaf</button>
-                        <button onclick="submitCorrection('Unhealthy Leaf')" class="option-btn">Unhealthy Leaf</button>
-                        <button onclick="submitCorrection('Non-Leaf')" class="option-btn">Non-Leaf</button>
-                    </div>
-                </div>
-
-                <p id="feedbackResponse" style="display:none; color:#2ecc71; margin-top:10px; font-weight:bold;">Thanks for your feedback! 📝</p>
-              </div>
-
-              <p style="color:#7f8c8d;margin-top:20px;font-size:0.8em;">Analysis completed successfully</p>
-            </div>
-          `;
-
-            const fills = document.querySelectorAll('.progress-fill');
-            fills.forEach((fill, i) => {
-              const perc = Object.values(probabilities)[i];
-              const text = fill.querySelector('.progress-text');
-              let current = 0;
-              const interval = setInterval(() => {
-                current++;
-                if (current >= perc) { current = perc; clearInterval(interval); }
-                text.textContent = current + "%";
-                fill.style.width = current + "%";
-              }, 10);
-            });
-
-            addRecentUpload(preview.src, prediction);
-          }
-          else {
-            output.innerHTML = `<div class="error-message"> ${result.error || "Analysis failed"}</div>`;
-          }
-        } catch (err) {
-          output.innerHTML = `<div class="error-message"> Error: ${err.message}</div>`;
-        } finally {
-          submitBtn.disabled = false;
-          submitBtn.textContent = "Analyze Leaf";
-        }
-      });
-      loadRecentUploads();
+    // Drag and Drop
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      uploadZone.addEventListener(eventName, preventDefaults, false);
     });
 
-    // Global state for feedback
-    let currentServerFilename = "unknown";
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
-  </script>
-  <script>
-    // Define functions in global scope
-    window.showCorrectionOptions = function () {
-      document.getElementById('initialFeedback').style.display = 'none';
-      document.getElementById('correctionSection').style.display = 'block';
-    };
+    ['dragenter', 'dragover'].forEach(eventName => {
+      uploadZone.addEventListener(eventName, () => uploadZone.classList.add('dragover'), false);
+    });
 
-    window.submitCorrection = function (actualLabel) {
-      window.sendFeedback(false, actualLabel);
-    };
+    ['dragleave', 'drop'].forEach(eventName => {
+      uploadZone.addEventListener(eventName, () => uploadZone.classList.remove('dragover'), false);
+    });
 
-    window.sendFeedback = async function (isCorrect, actualLabel = null) {
-      if (isCorrect) {
-        const btns = document.querySelectorAll('.feedback-btn');
-        btns.forEach(b => b.disabled = true);
-      } else {
-        document.getElementById('correctionSection').style.display = 'none';
+    uploadZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      handleFiles(files);
+    }
+
+    uploadZone.addEventListener('click', () => imageInput.click());
+    imageInput.addEventListener('change', () => handleFiles(imageInput.files));
+
+    function handleFiles(files) {
+      if (files.length > 0) {
+        const file = files[0];
+        // Assign to input for form submission
+        imageInput.files = files; // Essential for FormData
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          preview.src = e.target.result;
+          preview.style.display = 'block';
+        }
+        reader.readAsDataURL(file);
+      }
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      if (!imageInput.files.length) {
+        alert("Please select a file first!");
+        return;
       }
 
-      const feedbackResponse = document.getElementById('feedbackResponse');
-      if (feedbackResponse) {
-        feedbackResponse.innerHTML = isCorrect ? "Thanks! Model updated. 🧠" : "Thanks! Retraining model... 🔄";
-        feedbackResponse.style.display = 'block';
-      }
+      const formData = new FormData(uploadForm);
+      // formData will automatically contain 'image' because input has name="image"
 
-      const predictionEl = document.querySelector('.disease-name');
-      const prediction = predictionEl ? predictionEl.textContent : "unknown";
+      // UI Reset
+      output.innerHTML = '<div class="empty-state"><p>⏳ Processing...</p></div>';
+      progressSteps.style.display = 'block';
+      submitBtn.disabled = true;
 
-      if (!actualLabel) {
-        actualLabel = isCorrect ? prediction : "Unknown";
-      }
+      updateStep(1);
 
       try {
-        await fetch('/feedback', {
+        updateStep(2); // Mock progress for steps
+
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        updateStep(3);
+
+        const data = await response.json();
+
+        updateStep(4);
+        setTimeout(() => progressSteps.style.display = 'none', 1000); // Hide after success
+        submitBtn.disabled = false;
+
+        if (data.success) {
+          currentServerFilename = data.filename;
+          displayResult(data);
+        } else {
+          output.innerHTML = `<div class="result-item" style="color:red">Error: ${data.error}</div>`;
+        }
+      } catch (error) {
+        console.error(error);
+        submitBtn.disabled = false;
+        output.innerHTML = `<div class="result-item" style="color:red">Network Error</div>`;
+      }
+    });
+
+    function updateStep(stepNum) {
+      document.querySelectorAll('.step').forEach((el, index) => {
+        if (index + 1 === stepNum) el.classList.add('active');
+      });
+    }
+
+    function displayResult(data) {
+      const maxProb = Math.max(...Object.values(data.probabilities));
+      const color = maxProb > 80 ? '#27ae60' : (maxProb > 50 ? '#f39c12' : '#c0392b');
+
+      // Generate secondary probabilities text
+      let othersHtml = '';
+      const others = Object.entries(data.probabilities)
+        .filter(([label, prob]) => label !== data.prediction && prob > 0)
+        .map(([label, prob]) => `${label}: ${prob}%`);
+
+      if (others.length > 0) {
+        othersHtml = `<p style="font-size:0.9em; color:#7f8c8d; margin-top:5px;">Other possibilities: ${others.join(', ')}</p>`;
+      }
+
+      let html = `
+                <div class="result-item">
+                    <h3>Prediction: <span style="color:${color}">${data.prediction}</span></h3>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width:${maxProb}%; background-color:${color}"></div>
+                    </div>
+                    <p>Confidence: ${maxProb}%</p>
+                    ${othersHtml}
+                    ${data.explanation ? `<div style="margin-top:10px; padding:10px; background:#eef; border-radius:5px;"><small>${data.explanation}</small></div>` : ''}
+                    
+                    <!-- FEEDBACK SECTION -->
+                    <div id="feedbackSection" class="feedback-section">
+                        <p>Was this correct?</p>
+                        <div class="feedback-buttons">
+                            <button class="feedback-btn yes" onclick="sendFeedback(true)">👍 Yes</button>
+                            <button class="feedback-btn no" onclick="showCorrectionUI()">👎 No</button>
+                        </div>
+                        <div id="correctionUI" class="correction-ui hidden" style="display:none"> <!-- hidden class manual style -->
+                             <p>Please select correct label:</p>
+                             <div class="pill-labels">
+                                <button class="pill-btn" onclick="submitCorrection('Healthy Leaf')">Healthy Leaf</button>
+                                <button class="pill-btn" onclick="submitCorrection('Unhealthy leaf')">Unhealthy Leaf</button>
+                                <button class="pill-btn" onclick="submitCorrection('Non-Leaf')">Non-Leaf</button>
+                             </div>
+                        </div>
+                        <p id="feedbackMessage" style="margin-top:10px; font-weight:bold;"></p>
+                    </div>
+                </div>
+            `;
+      output.innerHTML = html;
+    }
+
+    // GLOBAL FEEDBACK FUNCTIONS (Attached to window for inline onclick)
+    window.sendFeedback = function (isCorrect) {
+      submitFeedbackPaylod(isCorrect, null);
+    };
+
+    window.showCorrectionUI = function () {
+      document.getElementById('correctionUI').style.display = 'block';
+    };
+
+    window.submitCorrection = function (label) {
+      submitFeedbackPaylod(false, label);
+    };
+
+    async function submitFeedbackPaylod(isCorrect, actualLabel) {
+      if (!currentServerFilename) return;
+      const msgEl = document.getElementById('feedbackMessage');
+      msgEl.innerText = "Submitting feedback...";
+
+      // Extract prediction text from DOM is hard, passed implicitly? 
+      // We can get it from the displayed DOM or just send currentServerFilename
+      // Backend only needs filename + actual_label + correct status
+      // Backend can infer old prediction but we usually send it for logging.
+      // Let's grab it:
+      const predEl = document.querySelector('.result-item h3 span');
+      const currentPred = predEl ? predEl.innerText : "unknown";
+
+      try {
+        const payload = {
+          filename: currentServerFilename,
+          prediction: currentPred,
+          correct: isCorrect,
+          actual_label: actualLabel
+        };
+
+        const res = await fetch('/feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prediction: prediction,
-            correct: isCorrect,
-            actual_label: actualLabel,
-            filename: currentServerFilename // Use variable captured from upload response
-          })
+          body: JSON.stringify(payload)
         });
-        if (feedbackResponse) feedbackResponse.innerHTML = "Feedback saved & Model retrained! ✅";
+
+        const data = await res.json();
+        if (data.success) {
+          msgEl.innerText = "Thanks! Model retrained successfully 🧠✅";
+          msgEl.style.color = "green";
+          document.getElementById('correctionUI').style.display = 'none';
+          // Disable buttons
+          document.querySelectorAll('.feedback-btn').forEach(btn => btn.disabled = true);
+        } else {
+          msgEl.innerText = "Error: " + data.error;
+          msgEl.style.color = "red";
+        }
       } catch (e) {
-        console.error("Feedback error:", e);
-        if (feedbackResponse) feedbackResponse.innerHTML = "Error saving feedback ❌";
+        console.error(e);
+        msgEl.innerText = "Network error.";
       }
-    };
+    }
   </script>
 </body>
 
