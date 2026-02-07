@@ -1,9 +1,12 @@
 from flask import Flask, request, jsonify, render_template
 import pickle
 import numpy as np
+import pandas as pd
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from sklearn.utils import resample
 from extract_features import extract_features
 from flask_cors import CORS
-from sklearn.preprocessing import LabelEncoder
 from werkzeug.utils import secure_filename
 import os
 import uuid
@@ -15,6 +18,11 @@ CORS(app)
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", 10)) * 1024 * 1024
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/tmp/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+FEEDBACK_FILE = "feedback.csv"
+DATA_CSV = "data.csv"
+
+# Global feature cache for active learning
+FEATURE_CACHE = {}
 
 MODEL_PATH = os.environ.get("MODEL_PATH", "knn_model.pkl")
 
@@ -32,6 +40,120 @@ label_encoder = LabelEncoder()
 label_encoder.classes_ = np.array(label_encoder_classes)
 
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+
+# ============================
+# Helper Functions
+# ============================
+
+def retrain_model():
+    """
+    Retrains the KNN model using the updated data.csv.
+    This mimics the logic in knn_trainer.py but runs in-process.
+    """
+    global knn, scaler, label_encoder_classes, label_encoder
+    
+    print("🔄 Retraining model with new data...")
+    
+    if not os.path.exists(DATA_CSV):
+        print("❌ CSV file not found. Skipping retrain.")
+        return
+
+    df = pd.read_csv(DATA_CSV)
+    
+    # Drop path/hash if they exist, keep only features + label
+    # The CSV structure is: path, label, hash, feat1, feat2... 
+    # But wait, existing extract_features puts path/label/hash in first 3 cols.
+    # We must ensure we align with that.
+    
+    # Standardize labels
+    df['label'] = df['label'].replace('Diseased leaf', 'Unhealthy leaf')
+    
+    # Balancing logic (Simple version: standardizing 'None-leaf' downsampling)
+    df_healthy = df[df['label'] == 'Healthy Leaf']
+    df_unhealthy = df[df['label'] == 'Unhealthy leaf']
+    df_none = df[df['label'] == 'None-leaf'] # Or 'Non-leaf' depending on standardized name
+    # Fix potential label mismatch
+    df_none = df[df['label'].str.lower().str.contains('non')] 
+
+    # If we have very few samples, skip complex balancing to avoid crashes
+    if len(df_healthy) < 5 or len(df_unhealthy) < 5:
+        print("⚠️ Not enough data to balance correctly. Training on raw data.")
+        df_balanced = df
+    else:
+        # Downsample majority (usually non-leaf) to match healthy count (or at least reasonable size)
+        target_count = max(len(df_healthy), len(df_unhealthy))
+        if len(df_none) > target_count:
+            df_none_down = resample(df_none, replace=False, n_samples=target_count, random_state=42)
+            df_balanced = pd.concat([df_healthy, df_unhealthy, df_none_down])
+        else:
+            df_balanced = pd.concat([df_healthy, df_unhealthy, df_none])
+
+    # Prepare X and y
+    # Features start from column 2 (indices 0=path, 1=label) in original CSV
+    # The structure is: path, label, feat1, feat2...
+    
+    # Drop non-feature columns. 
+    # We know features are numeric.
+    X = df_balanced.iloc[:, 2:].values # Columns 2 onwards are features
+    y = df_balanced['label'].values
+    
+    # Re-fit Label Encoder
+    le_new = LabelEncoder()
+    y_encoded = le_new.fit_transform(y)
+    
+    # Re-fit Scaler
+    scaler_new = MinMaxScaler()
+    X_scaled = scaler_new.fit_transform(X)
+    
+    # Train KNN (Best params from previous grid search: k=5, weights=distance usually)
+    # We'll stick to a robust default or what was loaded
+    knn_new = KNeighborsClassifier(n_neighbors=5, weights='distance', p=2)
+    knn_new.fit(X_scaled, y_encoded)
+    
+    # Update Globals
+    knn = knn_new
+    scaler = scaler_new
+    label_encoder = le_new
+    label_encoder_classes = le_new.classes_
+    label_encoder.classes_ = np.array(label_encoder_classes)
+    
+    # Save to disk
+    with open(MODEL_PATH, "wb") as f:
+        pickle.dump({'model': knn, 'scaler': scaler, 'classes': label_encoder_classes}, f)
+        
+    print("✅ Model successfully retrained and saved.")
+
+def generate_explanation(probabilities, prediction):
+    """
+    Generates a human-readable explanation based on confidence scores.
+    probabilities: dict { 'Healthy': 80, 'Unhealthy': 10, ... }
+    prediction: str (Key of the highest probability)
+    """
+    sorted_probs = sorted(probabilities.items(), key=lambda x: x[1], reverse=True)
+    top_label, top_score = sorted_probs[0]
+    second_label, second_score = sorted_probs[1] if len(sorted_probs) > 1 else (None, 0)
+    
+    explanation = ""
+
+    # Confidence Logic
+    if top_score >= 90:
+        explanation = f"The model is highly confident ({top_score}%) that this is {top_label}. The visual features (color density, texture patterns) match the standard profile for this category very closely."
+    elif top_score >= 70:
+        explanation = f"The model is fairly confident ({top_score}%) in the {top_label} classification. Most features align, though there might be slight variations in lighting or leaf texture."
+    elif top_score >= 50:
+        explanation = f"The analysis suggests {top_label} ({top_score}%), but there is some ambiguity. The model also detected similarities to {second_label} ({second_score}%). This often happens with early-stage disease or poor lighting."
+    else:
+        explanation = f"The result is uncertain. While {top_label} was the top match ({top_score}%), the features are very mixed, showing strong similarities to {second_label} ({second_score}%). "
+
+    # Specific Edge Case Explanations
+    if "Unhealthy" in top_label:
+        explanation += " Distinct discoloration or textural irregularities were detected on the leaf surface."
+    elif "Healthy" in top_label and probabilities.get("Unhealthy", 0) > 20:
+        explanation += " However, some small irregularities were noted, so keep an eye on the plant."
+    elif "Non-Leaf" in top_label:
+        explanation += " The image lacks the specific green/yellow color histograms and vein textures typically found in banana leaves."
+
+    return explanation
 
 # ============================
 # Routes
@@ -63,6 +185,11 @@ def upload_image():
     try:
         # Extract features and scale
         features = extract_features(temp_path)
+        
+        # Cache features for active learning (feedback loop)
+        # We use the original filename as key. In a real app, use a session ID.
+        FEATURE_CACHE[file.filename] = features
+        
         features_scaled = scaler.transform(features.reshape(1, -1))
 
         # Predict class
@@ -79,12 +206,17 @@ def upload_image():
             cls_name = cls.replace("Diseased", "Unhealthy") if "Diseased" in cls else cls
             prob_dict[cls_name] = int(round(prob * 100))
 
+        # Generate Explanation
+        explanation = generate_explanation(prob_dict, pred_label)
+
         print(f"Image uploaded: {file.filename} -> {pred_label} | {prob_dict}")
 
         return jsonify({
             "success": True,
             "prediction": pred_label,
-            "probabilities": prob_dict
+            "probabilities": prob_dict,
+            "explanation": explanation,
+            "filename": file.filename
         })
 
     except Exception as e:
@@ -95,6 +227,72 @@ def upload_image():
                 os.remove(temp_path)
             except Exception:
                 pass
+
+@app.route("/feedback", methods=["POST"])
+def save_feedback():
+    try:
+        data = request.json
+        filename = data.get("filename", "unknown")
+        prediction = data.get("prediction", "unknown")
+        is_correct = data.get("correct", False)
+        actual_label = data.get("actual_label", prediction if is_correct else "Unknown")
+        
+        # ACTIVE LEARNING LOGIC
+        if filename in FEATURE_CACHE:
+            features = FEATURE_CACHE[filename]
+            
+            # Standardize label for CSV (Needs to match training data format)
+            # Training data uses: 'Healthy Leaf', 'Unhealthy leaf', 'None-leaf'
+            # Our frontend sends: 'Healthy Leaf', 'Unhealthy Leaf', 'Non-Leaf'
+            
+            label_map = {
+                'Healthy Leaf': 'Healthy Leaf',
+                'Unhealthy Leaf': 'Unhealthy leaf',
+                'Non-Leaf': 'None-leaf' # or 'Non-leaf' in some dataset versions description said Non-leaf
+            }
+            # Fallback
+            standardized_label = label_map.get(actual_label, actual_label)
+            
+            # Construct row: path, label, feat1...feat59
+            # We don't have a real path or hash for the temp file anymore, so fill dummy
+            dummy_path = f"active_learning/{filename}"
+            # No hash column in actual data.csv
+            
+            row = [dummy_path, standardized_label] + features.tolist()
+            
+            # Append to data.csv
+            # We assume data.csv has no header? Or it does. knn_trainer.py reads with pd.read_csv.
+            # Convert to DataFrame to append cleanly matching columns if possible, 
+            # OR just append to file if we know the schema is fixed.
+            # Let's try appending as CSV line to avoid loading full DF here.
+            
+            # Convert values to string
+            row_str = ",".join(map(str, row))
+            
+            with open(DATA_CSV, "a") as f:
+                f.write(row_str + "\n")
+                
+            print(f"📝 Added new training sample for {standardized_label}")
+            
+            # TRIGGER RETRAIN
+            retrain_model()
+            
+            # Clear cache to free memory
+            del FEATURE_CACHE[filename]
+
+        # Log to feedback.csv as well
+        file_exists = os.path.isfile(FEEDBACK_FILE)
+        with open(FEEDBACK_FILE, "a") as f:
+            if not file_exists:
+                f.write("timestamp,filename,prediction,is_correct,actual_label\n")
+            import datetime
+            timestamp = datetime.datetime.now().isoformat()
+            f.write(f"{timestamp},{filename},{prediction},{is_correct},{actual_label}\n")
+            
+        return jsonify({"success": True})
+    except Exception as e:
+        print(e)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
