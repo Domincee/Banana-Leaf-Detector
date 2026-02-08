@@ -27,9 +27,11 @@ A smart machine learning web application that detects **Healthy**, **Unhealthy**
 ## 🛠️ Technology Stack
 
 *   **Backend:** Python 3.12, Flask
+*   **Database:** Firebase Firestore (Features & Feedback Logging)
 *   **Machine Learning:** scikit-learn (KNN), NumPy, Pandas
 *   **Computer Vision:** OpenCV, scikit-image
-*   **Frontend:** HTML5, CSS3, JavaScript (Vanilla)
+*   **Frontend:** HTML5, CSS3, JavaScript (Vanilla), Chart.js (Analytics)
+*   **Deployment:** Vercel / Render (Compatible)
 
 ---
 
@@ -58,7 +60,10 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### 4. Run the Application
+### 4. Configure Firebase
+Ensure you have your `firebase_credentials.json` or set the `FIREBASE_CREDENTIALS` environment variable.
+
+### 5. Run the Application
 ```bash
 python app.py
 ```
@@ -72,20 +77,20 @@ The app will start at `http://127.0.0.1:5000`.
 project/
 │
 ├── app.py                  # Main Flask application & Active Learning logic
+├── firebase_helpers.py     # Firestore interaction (Features/Feedback)
 ├── extract_features.py     # Feature extraction (Color, Texture, Shape)
-├── knn_trainer.py         # Initial model training script
-├── clean_data.py          # Utility to clean corrupted CSV data
+├── knn_trainer.py          # Initial model training script
 │
-├── dataset/               # Training images
+├── dataset/                # Training images
 ├── static/
-│   ├── uploads/           # Persisted user uploads
-│   └── styles.css         # UI Styling
+│   ├── uploads/            # Temporary storage for uploads
+│   └── styles.css          # UI Styling
 ├── templates/
-│   └── index.html         # Frontend Interface
+│   └── index.html          # Frontend Interface
 │
-├── data.csv               # Dataset + Active Learning new samples
-├── feedback.csv           # History log
-└── knn_model.pkl          # Serialized trained model
+├── data.csv                # Initial Dataset
+├── knn_model.pkl           # Serialized trained model
+└── requirements.txt        # Python dependencies
 ```
 
 ---
@@ -101,8 +106,8 @@ The system extracts **59 unique features** from each image:
 **Active Learning Workflow:**
 1.  User uploads image -> Model predicts.
 2.  User gives "Thumbs Down" -> Selects correct label.
-3.  `app.py` saves features + correct label to `data.csv`.
-4.  `retrain_model()` is triggered automatically to update `knn_model.pkl`.
+3.  `app.py` saves extracted features + correct label to **Firebase Firestore**.
+4.  Feedback is logged for future model retraining.
 
 ---
 
