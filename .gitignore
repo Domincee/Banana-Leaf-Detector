@@ -3,8 +3,7 @@
 venv/
 
 # Ignore dataset and uploaded files
-dataset/raw_data
-dataset/train_data
+dataset/
 
 uploads/
 

@@ -3,8 +3,6 @@ Flask-Cors
 opencv-python-headless==4.12.0.88
 numpy
 pandas
-matplotlib
-seaborn
 scikit-learn
 scikit-image
 gunicorn==21.2.0
