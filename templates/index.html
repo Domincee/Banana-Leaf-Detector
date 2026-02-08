@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     .header-actions {
       display: flex;
@@ -27,9 +28,73 @@
       transition: background 0.2s;
     }
 
-    .analytics-btn:hover {
-      background: #2980b9;
+    /* Dashboard Styles */
+    .dashboard-section {
+      margin-top: 30px;
     }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+      text-align: center;
+      border: 1px solid #dee2e6;
+    }
+
+    .stat-value {
+      font-size: 2em;
+      font-weight: 700;
+      color: #2ecc71;
+      margin: 10px 0;
+    }
+
+    .stat-label {
+      color: #7f8c8d;
+      font-size: 0.8em;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 20px;
+    }
+
+    .chart-card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+      border: 1px solid #dee2e6;
+    }
+
+    .chart-title {
+      margin-bottom: 15px;
+      font-size: 1.1em;
+      color: #2c3e50;
+      border-bottom: 2px solid #ecf0f1;
+      padding-bottom: 10px;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 250px !important;
+    }
+
+    .header-actions {
+      display: none;
+    }
+
+    /* Hide old actions since analytics is embedded */
   </style>
 
   <script>
@@ -94,12 +159,43 @@
           </div>
         </div>
       </div>
+      <!-- CARD 2.5: ANALYTICS -->
+      <div class="card dashboard-section">
+        <h2>📊 Live Analytics</h2>
+
+        <!-- Stats Row -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="totalScans">0</div>
+            <div class="stat-label">Total Scans</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="accuracyRate">0%</div>
+            <div class="stat-label">Feedback Accuracy</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="topDisease">-</div>
+            <div class="stat-label">Most Common</div>
+          </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title">Disease Distribution</div>
+            <canvas id="diseaseChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Detection Timeline (30 Days)</div>
+            <canvas id="timelineChart"></canvas>
+          </div>
+        </div>
+      </div>
       <!-- CARD 3: HISTORY -->
       <div class="card history-section">
         <div class="history-header">
           <h2>📜 Analysis History</h2>
           <div class="header-actions">
-            <a href="/dashboard" class="analytics-btn" title="View Analytics">📊 Analytics</a>
             <button class="clear-history-btn" onclick="clearHistory()" title="Clear History">🗑️ Clear</button>
           </div>
         </div>
@@ -422,6 +518,114 @@
         }
       });
     }
+
+    // --- ANALYTICS FUNCTIONS ---
+    async function loadAnalytics() {
+      try {
+        const res = await fetch('/api/analytics');
+        const response = await res.json();
+
+        if (!response.success) {
+          console.error("API Error:", response.error);
+          return;
+        }
+
+        const data = response.data;
+
+        // 1. Update Stats Cards
+        document.getElementById('totalScans').innerText = data.total_scans;
+
+        // Calculate Accuracy
+        const acc = data.accuracy;
+        const totalFeedback = acc.correct + acc.incorrect;
+        const accuracyRate = totalFeedback > 0 ? Math.round((acc.correct / totalFeedback) * 100) : 0;
+        document.getElementById('accuracyRate').innerText = accuracyRate + "%";
+
+        // Find Top Disease
+        let topDisease = "None";
+        let maxCount = 0;
+        for (const [disease, count] of Object.entries(data.disease_counts)) {
+          if (count > maxCount) {
+            maxCount = count;
+            topDisease = disease;
+          }
+        }
+        document.getElementById('topDisease').innerText = topDisease;
+
+
+        // 2. Render Charts
+        renderPieChart(data.disease_counts);
+        renderTimelineChart(data.timeline);
+
+      } catch (e) {
+        console.error("Fetch Error:", e);
+      }
+    }
+
+    function renderPieChart(counts) {
+      const ctx = document.getElementById('diseaseChart').getContext('2d');
+      const labels = Object.keys(counts);
+      const data = Object.values(counts);
+
+      new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: data,
+            backgroundColor: [
+              '#2ecc71', // Healthy (Green)
+              '#e74c3c', // Unhealthy (Red)
+              '#95a5a6', // Non-leaf (Gray)
+              '#f1c40f', // Yellowish/Other
+              '#3498db'  // Blueish/Other
+            ],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    function renderTimelineChart(timelineData) {
+      const ctx = document.getElementById('timelineChart').getContext('2d');
+
+      // Data is list of {date: '', count: N}
+      const labels = timelineData.map(d => d.date);
+      const counts = timelineData.map(d => d.count);
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Scans',
+            data: counts,
+            borderColor: '#3498db',
+            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
+          }
+        }
+      });
+    }
+
+    // Load analytics on start
+    loadAnalytics();
   </script>
 </body>
 

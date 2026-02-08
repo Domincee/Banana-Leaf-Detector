@@ -292,9 +292,6 @@ def save_feedback():
         print(e)
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route("/dashboard")
-def dashboard():
-    return render_template("dashboard.html")
 
 @app.route("/api/analytics")
 def analytics_api():
