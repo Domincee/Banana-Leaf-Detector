@@ -15,7 +15,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
 import uuid
-from firebase_helpers import init_firebase, save_feature_to_firestore, save_feedback_to_firestore, get_feedback_history
+from firebase_helpers import init_firebase, save_feature_to_firestore, save_feedback_to_firestore, get_feedback_history, get_analytics_data
 
 
 app = Flask(__name__)
@@ -290,6 +290,18 @@ def save_feedback():
         return jsonify({"success": True})
     except Exception as e:
         print(e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/dashboard")
+def dashboard():
+    return render_template("dashboard.html")
+
+@app.route("/api/analytics")
+def analytics_api():
+    try:
+        data = get_analytics_data(limit=1000) # Fetch more for analytics
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/history", methods=["GET"])

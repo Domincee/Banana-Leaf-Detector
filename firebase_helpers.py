@@ -167,3 +167,67 @@ def get_all_dataset_features():
     except Exception as e:
         print(f"❌ Firestore Dataset Error: {e}")
         return []
+
+def get_analytics_data(limit=500):
+    """
+    Aggregate analytics data from feedback history.
+    """
+    db = init_firebase()
+    if not db:
+        return {}
+
+    try:
+        # Fetch larger history for stats
+        docs = db.collection('feedback').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(limit).stream()
+        
+        total_scans = 0
+        disease_counts = {}
+        correct_count = 0
+        incorrect_count = 0
+        
+        # Timeline data (simplified: count per date)
+        timeline = {}
+
+        for doc in docs:
+            d = doc.to_dict()
+            total_scans += 1
+            
+            # Disease Distribution (based on actual_label if corrected, else prediction)
+            actual = d.get('actual_label')
+            pred = d.get('prediction')
+            
+            # Determine "final" label
+            final_label = actual if actual and actual != "Unknown" else pred
+            if final_label:
+                disease_counts[final_label] = disease_counts.get(final_label, 0) + 1
+            
+            # Accuracy Stats
+            is_correct = d.get('is_correct', False)
+            if is_correct:
+                correct_count += 1
+            elif actual and actual != pred:
+                incorrect_count += 1
+            # else: unknown/unverified
+            
+            # Timeline
+            ts = d.get('timestamp')
+            if ts:
+                date_str = ts.strftime("%Y-%m-%d")
+                timeline[date_str] = timeline.get(date_str, 0) + 1
+
+        # Sort timeline
+        sorted_timeline = [{"date": k, "count": v} for k, v in sorted(timeline.items())]
+
+        return {
+            "total_scans": total_scans,
+            "disease_counts": disease_counts,
+            "accuracy": {
+                "correct": correct_count,
+                "incorrect": incorrect_count,
+                 # "unknown": total_scans - correct_count - incorrect_count 
+            },
+            "timeline": sorted_timeline
+        }
+    except Exception as e:
+        print(f"❌ Analytics Error: {e}")
+        return {}

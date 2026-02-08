@@ -9,6 +9,28 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    .header-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .analytics-btn {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .analytics-btn:hover {
+      background: #2980b9;
+    }
+  </style>
 
   <script>
     function scrollToTool() {
@@ -76,7 +98,10 @@
       <div class="card history-section">
         <div class="history-header">
           <h2>📜 Analysis History</h2>
-          <button class="clear-history-btn" onclick="clearHistory()" title="Clear History">🗑️ Clear</button>
+          <div class="header-actions">
+            <a href="/dashboard" class="analytics-btn" title="View Analytics">📊 Analytics</a>
+            <button class="clear-history-btn" onclick="clearHistory()" title="Clear History">🗑️ Clear</button>
+          </div>
         </div>
         <div class="history-grid">
           <!-- COLUMN 1: ACCURATE -->

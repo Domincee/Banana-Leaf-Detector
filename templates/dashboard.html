@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard | Banana Leaf Detector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .dash-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .back-btn {
+            background: #2c3e50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+        .back-btn:hover {
+            background: #34495e;
+            transform: translateY(-2px);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #2ecc71;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+        }
+
+        .chart-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .chart-title {
+            margin-bottom: 20px;
+            font-size: 1.2em;
+            color: #2c3e50;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 10px;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 300px !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="dashboard-container">
+        <div class="dash-header">
+            <h1>📊 Analytics Dashboard</h1>
+            <a href="/" class="back-btn">← Back to App</a>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalScans">0</div>
+                <div class="stat-label">Total Scans</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="accuracyRate">0%</div>
+                <div class="stat-label">Feedback Accuracy</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="topDisease">-</div>
+                <div class="stat-label">Most Common Detection</div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <div class="chart-title">Disease Distribution</div>
+                <canvas id="diseaseChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">Detection Timeline (Last 30 Days)</div>
+                <canvas id="timelineChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadAnalytics() {
+            try {
+                const res = await fetch('/api/analytics');
+                const response = await res.json();
+
+                if (!response.success) {
+                    console.error("API Error:", response.error);
+                    return;
+                }
+
+                const data = response.data;
+
+                // 1. Update Stats Cards
+                document.getElementById('totalScans').innerText = data.total_scans;
+
+                // Calculate Accuracy
+                const acc = data.accuracy;
+                const totalFeedback = acc.correct + acc.incorrect;
+                const accuracyRate = totalFeedback > 0 ? Math.round((acc.correct / totalFeedback) * 100) : 0;
+                document.getElementById('accuracyRate').innerText = accuracyRate + "%";
+
+                // Find Top Disease
+                let topDisease = "None";
+                let maxCount = 0;
+                for (const [disease, count] of Object.entries(data.disease_counts)) {
+                    if (count > maxCount) {
+                        maxCount = count;
+                        topDisease = disease;
+                    }
+                }
+                document.getElementById('topDisease').innerText = topDisease;
+
+
+                // 2. Render Charts
+                renderPieChart(data.disease_counts);
+                renderTimelineChart(data.timeline);
+
+            } catch (e) {
+                console.error("Fetch Error:", e);
+            }
+        }
+
+        function renderPieChart(counts) {
+            const ctx = document.getElementById('diseaseChart').getContext('2d');
+            const labels = Object.keys(counts);
+            const data = Object.values(counts);
+
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            '#2ecc71', // Healthy (Green)
+                            '#e74c3c', // Unhealthy (Red)
+                            '#95a5a6', // Non-leaf (Gray)
+                            '#f1c40f', // Yellowish/Other
+                            '#3498db'  // Blueish/Other
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        }
+
+        function renderTimelineChart(timelineData) {
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+
+            // Data is list of {date: '', count: N}
+            const labels = timelineData.map(d => d.date);
+            const counts = timelineData.map(d => d.count);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Scans',
+                        data: counts,
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    }
+                }
+            });
+        }
+
+        // Load on start
+        loadAnalytics();
+    </script>
+
+</body>
+
+</html>
