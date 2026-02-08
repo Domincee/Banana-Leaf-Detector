@@ -15,3 +15,5 @@ __pycache__/
 
 # Ignore notebook checkpoints
 .ipynb_checkpoints/
+
+.env

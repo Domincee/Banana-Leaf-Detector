@@ -8,3 +8,5 @@ seaborn
 scikit-learn
 scikit-image
 gunicorn==21.2.0
+firebase-admin
+python-dotenv

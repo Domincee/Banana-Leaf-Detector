@@ -1,4 +1,9 @@
 from flask import Flask, request, jsonify, render_template
+import os
+from dotenv import load_dotenv
+
+# Load .env file (silent=True to avoid errors if .env is missing in production)
+load_dotenv()
 import pickle
 import numpy as np
 import pandas as pd
@@ -10,6 +15,8 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
 import uuid
+from firebase_helpers import init_firebase, save_feature_to_firestore, save_feedback_to_firestore, get_feedback_history
+
 
 app = Flask(__name__)
 CORS(app)
@@ -34,6 +41,10 @@ FEATURE_CACHE = {}
 MODEL_PATH = os.environ.get("MODEL_PATH", "knn_model.pkl")
 
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+
+# Init Firebase
+db = init_firebase()
+
 
 # ============================
 # Load trained KNN model
@@ -263,67 +274,18 @@ def save_feedback():
                 'Non-Leaf': 'None-leaf' 
             }
             standardized_label = label_map.get(actual_label, actual_label)
-            dummy_path = f"active_learning/{filename}"
             
-            # DEDUPLICATION & APPEND
-            try:
-                if IS_VERCEL:
-                    print("⚠️ Active Learning disabled on Vercel (Read-Only Filesystem).")
-                elif os.path.exists(DATA_CSV):
-                    df = pd.read_csv(DATA_CSV)
-                    
-                    # Remove existing entries for this file to avoid duplicates/conflicts
-                    # We filter out rows where path matches our dummy_path
-                    initial_len = len(df)
-                    df = df[df['path'] != dummy_path]
-                    if len(df) < initial_len:
-                        print(f"♻️  Replaced existing entry for {filename}")
-                        
-                    # Create new row
-                    # We map features to the existing columns (skipping path/label)
-                    # We assume the CSV structure is stable: path, label, feat1, feat2...
-                    feature_cols = df.columns[2:]
-                    
-                    if len(features) != len(feature_cols):
-                        print(f"⚠️ Feature count mismatch! Got {len(features)}, expected {len(feature_cols)}")
-                        # Fallback: Just append as values if columns don't align perfectly (risky but better than crash)
-                         # Actually, if mismatch, we shouldn't save. 
-                        pass
-                    
-                    new_row = {'path': dummy_path, 'label': standardized_label}
-                    for i, col in enumerate(feature_cols):
-                        if i < len(features):
-                            new_row[col] = features[i]
-                            
-                    # Append unique row
-                    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    
-                    # Save back to CSV (overwriting safely)
-                    df.to_csv(DATA_CSV, index=False)
-                    print(f"📝 Active Learning: Saved {standardized_label} to dataset.")
-                    
-                    # Trigger Retrain
-                    retrain_model()
-                    
-                else:
-                    print("❌ data.csv missing, cannot append.")
-            except Exception as csv_err:
-                print(f"❌ Error updating CSV: {csv_err}")
+            # Save to Firestore (Features)
+            success = save_feature_to_firestore(features, standardized_label, filename)
+            
+            if success:
+                print(f"📝 Active Learning: Saved {standardized_label} to Firestore.")
             
             # Clear cache
             del FEATURE_CACHE[filename]
 
-        # Log to feedback.csv as well
-        file_exists = os.path.isfile(FEEDBACK_FILE)
-        with open(FEEDBACK_FILE, "a") as f:
-            if not file_exists:
-                f.write("timestamp,filename,prediction,is_correct,actual_label\n")
-            import datetime
-            timestamp = datetime.datetime.now().isoformat()
-            if not IS_VERCEL:
-                f.write(f"{timestamp},{filename},{prediction},{is_correct},{actual_label}\n")
-            else:
-                print(f"📝 Feedback received: {filename}, {prediction}, {is_correct}, {actual_label} (Not saved: Read-Only FS)")
+        # Log to Firestore (Feedback)
+        save_feedback_to_firestore(filename, prediction, is_correct, actual_label)
             
         return jsonify({"success": True})
     except Exception as e:
@@ -331,48 +293,10 @@ def save_feedback():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/history", methods=["GET"])
-def get_history():
-    if not os.path.exists(FEEDBACK_FILE):
-        return jsonify([])
-
-    history = []
-    try:
-        # Read backwards or just read all and reverse
-        import csv
-        with open(FEEDBACK_FILE, "r") as f:
-            reader = csv.DictReader(f)
-            data = list(reader)
-            
-            # Process rows
-            for row in reversed(data): # Newest first
-                # Determine status
-                is_correct = row.get("is_correct", "False").lower() == "true"
-                actual = row.get("actual_label", "")
-                pred = row.get("prediction", "")
-                
-                status = "unknown"
-                if is_correct:
-                    status = "correct"
-                elif actual and actual != pred:
-                    status = "corrected"
-                else:
-                    status = "incorrect" # Wrong but no correction provided (rare with current UI)
-
-                history.append({
-                    "timestamp": row.get("timestamp"),
-                    "filename": row.get("filename"),
-                    "prediction": pred,
-                    "actual": actual,
-                    "status": status
-                })
-                
-                if len(history) >= 50: # Limit to last 50
-                    break
-                    
-        return jsonify(history)
-    except Exception as e:
-        print(f"History error: {e}")
-        return jsonify({"error": str(e)}), 500
+def get_history_route():
+    # Fetch from Firestore
+    history = get_feedback_history()
+    return jsonify(history)
 @app.route("/clear_history", methods=["POST"])
 def clear_history():
     try:
