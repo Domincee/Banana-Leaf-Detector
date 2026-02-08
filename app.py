@@ -17,12 +17,16 @@ CORS(app)
 # Config
 # Config
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", 10)) * 1024 * 1024
-UPLOAD_FOLDER = 'static/uploads'
+# Use /tmp for Vercel (or any read-only FS environment)
+UPLOAD_FOLDER = '/tmp' if os.environ.get('VERCEL') else 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 FEEDBACK_FILE = "feedback.csv"
 DATA_CSV = "data.csv"
+
+# Check if running on Vercel
+IS_VERCEL = bool(os.environ.get('VERCEL'))
 
 # Global feature cache for active learning
 FEATURE_CACHE = {}
@@ -57,6 +61,10 @@ def retrain_model():
     global knn, scaler, label_encoder_classes, label_encoder
     
     print("🔄 Retraining model with new data...")
+    
+    if IS_VERCEL:
+        print("⚠️ Cannot retrain model on Vercel (Read-Only Filesystem). Skipping.")
+        return
     
     if not os.path.exists(DATA_CSV):
         print("❌ CSV file not found. Skipping retrain.")
@@ -259,7 +267,9 @@ def save_feedback():
             
             # DEDUPLICATION & APPEND
             try:
-                if os.path.exists(DATA_CSV):
+                if IS_VERCEL:
+                    print("⚠️ Active Learning disabled on Vercel (Read-Only Filesystem).")
+                elif os.path.exists(DATA_CSV):
                     df = pd.read_csv(DATA_CSV)
                     
                     # Remove existing entries for this file to avoid duplicates/conflicts
@@ -310,7 +320,10 @@ def save_feedback():
                 f.write("timestamp,filename,prediction,is_correct,actual_label\n")
             import datetime
             timestamp = datetime.datetime.now().isoformat()
-            f.write(f"{timestamp},{filename},{prediction},{is_correct},{actual_label}\n")
+            if not IS_VERCEL:
+                f.write(f"{timestamp},{filename},{prediction},{is_correct},{actual_label}\n")
+            else:
+                print(f"📝 Feedback received: {filename}, {prediction}, {is_correct}, {actual_label} (Not saved: Read-Only FS)")
             
         return jsonify({"success": True})
     except Exception as e:
